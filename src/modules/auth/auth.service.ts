@@ -1,12 +1,18 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { createWalletDto } from './dto/auth.dto';
+import { createWalletDto, flowTypeDto } from './dto/auth.dto';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AuthSdk } from 'src/entity/test.entity';
-import { Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { encrypt, decrypt } from 'src/config/common/encrypt';
-import { generateRandomString } from 'src/config/common/common';
+import {
+  generateOtp,
+  generateRandomString,
+  validatePhoneNumber,
+} from 'src/config/common/common';
+import { sendEmail, sendPhone } from 'src/config/common/axiosHttp';
+import { EmailOtp } from 'src/entity/email.otp';
 
 @Injectable()
 export class AuthService {
@@ -14,6 +20,8 @@ export class AuthService {
     private readonly configService: ConfigService,
     @InjectRepository(AuthSdk)
     private readonly authRepository: Repository<AuthSdk>,
+    @InjectRepository(EmailOtp)
+    private readonly emailOtpModule: Repository<EmailOtp>,
   ) {}
 
   createWallet = async (input: createWalletDto) => {
@@ -62,7 +70,7 @@ export class AuthService {
     }
   };
 
-  checkWalletExists = async (userKey, shard1Exists) => {
+  checkWalletExists = async (userKey: string, shard1Exists: boolean) => {
     try {
       const hashedUserKey = this.hashKey(userKey);
       const foundData = await this.authRepository.findOne({
@@ -116,6 +124,85 @@ export class AuthService {
         .createHmac('sha256', this.configService.getOrThrow('SECRET_KEY'))
         .update(key)
         .digest('hex');
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  sendEmail = async (email: string) => {
+    try {
+      const hashedEmail = this.hashKey(email);
+      const otp = generateOtp(6);
+      const newOtpData = this.emailOtpModule.create({
+        hashedKey: hashedEmail,
+        otp,
+      });
+
+      await this.emailOtpModule.save(newOtpData);
+      //  send OTP
+      await sendEmail(email, otp);
+      return { status: { success: true, message: 'EMail OTP is sent' } };
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  verifyEmail = async (email: string, otp: string) => {
+    try {
+      const hashedEmail = this.hashKey(email);
+      const foundOTP = await this.emailOtpModule.find({
+        where: { hashedKey: hashedEmail, otp },
+      });
+      if (foundOTP) {
+        return { status: { success: true, message: 'Email OTP is verified' } };
+      } else {
+        return { status: { success: false, message: 'Envalid email OTP' } };
+      }
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  sendPhone = async (countryCode: string, phone: string) => {
+    try {
+      const phoneKey = `${countryCode}${phone}`;
+      const isValid = validatePhoneNumber(phoneKey);
+      if (!isValid) {
+        return {
+          status: {
+            success: false,
+            message: 'Please enter a valid phone number',
+          },
+        };
+      }
+      const hashedPhone = this.hashKey(phoneKey);
+      const otp = generateOtp(6);
+      const newOtpData = this.emailOtpModule.create({
+        hashedKey: hashedPhone,
+        otp,
+      });
+
+      await this.emailOtpModule.save(newOtpData);
+      //  send OTP
+      await sendPhone(countryCode, phone, otp);
+      return { status: { success: true, message: 'Phone OTP is sent' } };
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  verifyPhone = async (countryCode: string, phone: string, otp: string) => {
+    try {
+      const phoneKey = `${countryCode}${phone}`;
+      const hashedEmail = this.hashKey(phoneKey);
+      const foundOTP = await this.emailOtpModule.find({
+        where: { hashedKey: hashedEmail, otp },
+      });
+      if (foundOTP) {
+        return { status: { success: true, message: 'Phone OTP is verified' } };
+      } else {
+        return { status: { success: false, message: 'Envalid email OTP' } };
+      }
     } catch (error) {
       throw error;
     }

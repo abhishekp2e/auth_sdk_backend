@@ -7,23 +7,18 @@ import {
 } from 'typeorm';
 
 @Entity()
-export class AuthSdk {
+export class EmailOtp {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column('varchar', { nullable: false, unique: true })
-  userKey: string;
+  hashedKey: string;
 
   @Column('varchar', { nullable: false })
-  shard2: string;
+  otp: string;
 
-  @Column('varchar', { nullable: false })
-  shard3: string;
-
-  @Column('enum', {
-    enum: flowTypeDto,
-  })
-  type: flowTypeDto;
+  @Column('int', { nullable: false, default: 0 })
+  attempts: number;
 
   @CreateDateColumn({ select: false })
   created_at: Date;
